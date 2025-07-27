@@ -8,7 +8,7 @@ import piece;
 
 fen::Fen fen;
 
-bool flip = false;
+bool flip = true;
 
 fn rl::Color getColor(int x, int y) {
     if (x & 1 == y & 1) {
@@ -23,7 +23,7 @@ const char[] ATLAS = $embed("../resources/chess.png");
 fn void createTile(grids::Ctx context, rl::Texture2D tex, grids::Ctx texContext, int[<2>] size, int x, int y) {
     int drawX = x;
     int drawY = y;
-    if(flip) {
+    if(flip && fen.turn == BLACK) {
         drawX = 7-x;
         drawY = 7-y;
     }
@@ -103,12 +103,14 @@ option::Option{int[<2>]} selected;
 piece::Possible possible;
 
 fn void place(int[<2>] n) {
-    if(fen.board[n.x][n.y].piece == fen::PieceType.NONE) {
+    if(fen.board[n.x][n.y].piece == fen::PieceType.NONE || fen.board[n.x][n.y].color != fen.turn) {
         selected = {};
+        possible.free();
         possible = {};
         return;
     }
     selected = option::some{int[<2>]}(n);
+    possible.free();
     possible = piece::getPossible(fen, n);
 }
 
@@ -128,14 +130,17 @@ fn void handle_move(int[<2>] from, int[<2>] to) {
     });
     if(to != from && m.isSome()) {
         piece::Move move = m.unwrap();
+        fen.en_passant_target = move.en_passant;
         if(move.capture.isSome()) {
             int[<2>] np = move.capture.unwrap();
             fen.board[np.x][np.y] = {};
         }
         fen.board[to.x][to.y] = fen.board[from.x][from.y];
         fen.board[from.x][from.y] = {};
+        fen.turn.change();
     }
     selected = {};
+    possible.free();
     possible = {};
 }
 
@@ -157,7 +162,7 @@ fn int main(String[] args) {
         mousePos = rl::getMousePosition();
         if (rl::isMouseButtonPressed(rl::MouseButton.LEFT)) {
             int[<2>] n = grids::getGridPos({(int) $$round(mousePos.x), (int)$$round(mousePos.y)}, context);             
-            if(flip) {
+            if(flip && fen.turn == BLACK) {
                 n.x = 7-n.x;
                 n.y = 7-n.y;
             }

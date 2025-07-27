@@ -18,6 +18,14 @@ enum Color: int(int ypos, char fen_turn, int dir, int pawn_file) {
     BLACK = {1, 'b', 1, 1},
 }
 
+fn void Color.change(&self) {
+    if(*self == WHITE) {
+        *self = BLACK;
+    } else {
+        *self = WHITE;
+    }
+}
+
 struct Piece {
     PieceType piece;
     Color color;

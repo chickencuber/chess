@@ -22,6 +22,14 @@ fn Type Option.unwrap(&self) {
     return self.val;
 }
 
+fn Type Option.expect(&self, String str) {
+    if(!self.has) {
+        io::printfn("%s", str);
+        os::exit(1);
+    }
+    return self.val;
+}
+
 fn Type Option.unwrap_or(&self, Type _default) {
     if(self.has) {
         return self.unwrap();

@@ -6,6 +6,7 @@ import option;
 struct Move {
     int[<2>] pos;
     option::Option{int[<2>]} capture;
+    option::Option{int[<2>]} en_passant;
 }
 
 fn bool Move.add_self(&self, Move other) @operator(==) {
@@ -77,14 +78,23 @@ fn Possible getPAWN(fen::Fen fen, int[<2>] pos, fen::Color color) @private {
     if(fen.board[new.x][new.y].piece == NONE) {
         list.push({
             .pos = new,
-        });
+            });
         new.y += color.dir;
         if(fen.board[new.x][new.y].piece == NONE && pos.y == color.pawn_file) {
+            option::Option{int[<2>]} en_passant = {};
+            if(
+                    fen.board[new.x+1][new.y].piece == PAWN && fen.board[new.x+1][new.y].color != color ||
+                    fen.board[new.x-1][new.y].piece == PAWN && fen.board[new.x-1][new.y].color != color 
+              ) {
+                en_passant = option::some{int[<2>]}({new.x, new.y-color.dir});
+            }
             list.push({
-                .pos = new,
+                    .pos = new,
+                    .en_passant = en_passant, //sets the en passant target position
             });
         }
     }
+    int[<2>] pass = fen.en_passant_target.unwrap_or({32, 32}); //random value outside of the range of the board
     new = {pos.x, pos.y + color.dir};
     new.x +=1;
     if(fen.board[new.x][new.y].piece != NONE) {
@@ -94,6 +104,11 @@ fn Possible getPAWN(fen::Fen fen, int[<2>] pos, fen::Color color) @private {
                 .capture = option::some{int[<2>]}(new), //technically not needed
             });
         }
+    } else if(new == pass) {
+            list.push({
+                .pos = new,
+                .capture = option::some{int[<2>]}({new.x, new.y - color.dir}), //this is why .capture exists
+            });
     }
     new.x-=2;
     if(fen.board[new.x][new.y].piece != NONE) {
@@ -103,8 +118,12 @@ fn Possible getPAWN(fen::Fen fen, int[<2>] pos, fen::Color color) @private {
                 .capture = option::some{int[<2>]}(new), //technically not needed
             });
         }
+    } else if(new == pass) {
+            list.push({
+                .pos = new,
+                .capture = option::some{int[<2>]}({new.x, new.y - color.dir}), //this is why .capture exists
+            });
     }
-    // TODO en passant
     return list;
 }
 fn Possible getKNIGHT(fen::Fen fen, int[<2>] pos, fen::Color color) @private {
@@ -166,8 +185,7 @@ fn Possible getKING(fen::Fen fen, int[<2>] pos, fen::Color color) @private {
     return list;
 }
 
-fn Possible getPossible(fen::Fen fen, int[<2>] pos) {
-    //TODO add check checking
+fn Possible _getPossible(fen::Fen fen, int[<2>] pos) {
     switch(fen.board[pos.x][pos.y].piece) {
         case ROOK:
             return getROOK(fen, pos, fen.board[pos.x][pos.y].color);
@@ -184,5 +202,71 @@ fn Possible getPossible(fen::Fen fen, int[<2>] pos) {
         default:
             return {};
     }
+}
+
+fn void handle(fen::Fen* fen, int[<2>] from, Move move) {
+    if(move.capture.isSome()) {
+        int[<2>] p = move.capture.unwrap();
+        fen.board[p.x][p.y] = {}; 
+    }
+    fen.board[move.pos.x][move.pos.y] = fen.board[from.x][from.y];
+    fen.board[from.x][from.y] = {};
+}
+
+fn bool canBeAttacked(fen::Fen fen, int[<2>] pos) {
+    //the root cause for all of the slowness
+    for(int x = 0; x < 8; x++) {
+        for(int y = 0; y < 8; y++) {
+            if(fen.board[x][y].color != fen.turn) {
+                Possible possible = _getPossible(fen, {x, y}); // chess doesn't care if the piece threatening this square 
+                                                               // can legally move here, as to why we are using _getPossible rather than getPossible(which filters move legality)
+                                                               // also if I did getPossible there would be infinite recursion
+                foreach(p: possible) {
+                    if(p.pos == pos) {
+                        return true;
+                    }
+                    if(p.capture.isSome()) {
+                        if(p.capture.unwrap() == pos) {
+                            return true;
+                        }
+                    }
+                }
+                possible.free();
+            }
+        }
+    }
+    return false;
+}
+
+fn bool isCheck(fen::Fen fen) {
+    //this function is sooooooo slow
+    int[<2>] king;
+    bool found = false;
+    for(int x = 0; x < 8; x++) {
+        for(int y = 0; y < 8; y++) {
+            if(fen.board[x][y].color == fen.turn && fen.board[x][y].piece == KING) {
+                king = {x, y};
+                found = true;
+                break;
+            }
+        }
+        if(found) break;
+    }
+    return canBeAttacked(fen, king);    
+}
+
+//works but is slow
+fn Possible getPossible(fen::Fen fen, int[<2>] pos) {
+    fen::Fen n = fen;
+    Possible p = _getPossible(fen, pos);
+    for(usz i = 0; i < p.len(); i++) {
+        handle(&n, pos, p[i]);
+        if(isCheck(n)) {
+            p.remove_at(i);
+            i--;
+        }
+        n=fen;
+    }
+    return p;
 }
 
